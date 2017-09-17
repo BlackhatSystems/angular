@@ -69,7 +69,6 @@ groups:
           - "*.lock"
           - "tools/*"
         exclude:
-          - "tools/@angular/tsc-wrapped/*"
           - "tools/public_api_guard/*"
           - "aio/*"
     users:
@@ -136,8 +135,9 @@ groups:
   compiler-cli:
     conditions:
       files:
-        - "tools/@angular/tsc-wrapped/*"
+        - "packages/tsc-wrapped/*"
         - "packages/compiler-cli/*"
+        - "packages/bazel/*"
     users:
       - alexeagle
       - chuckjaz
@@ -256,6 +256,8 @@ groups:
       files:
         include:
           - "aio/*"
+        exclude:
+          - "aio/content/*"
     users:
       - petebacondarwin #primary
       - IgorMinar
@@ -276,6 +278,8 @@ groups:
       - Foxandxss
       - stephenfluin
       - wardbell
+      - petebacondarwin
+      - gkalpak
       - IgorMinar #fallback
       - mhevery #fallback
 
@@ -289,5 +293,7 @@ groups:
     users:
       - juleskremer #primary
       - stephenfluin
+      - petebacondarwin
+      - gkalpak
       - IgorMinar #fallback
       - mhevery #fallback

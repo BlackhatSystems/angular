@@ -105,17 +105,20 @@ const summaryResolver = new AotSummaryResolver(
     {
       loadSummary(filePath: string) { return null; },
       isSourceFile(sourceFilePath: string) { return true; },
-      getOutputFileName(sourceFilePath: string) { return sourceFilePath; }
+      toSummaryFileName(sourceFilePath: string) { return sourceFilePath; },
+      fromSummaryFileName(filePath: string): string{return filePath;},
     },
     staticSymbolCache);
 
 export class DiagnosticContext {
+  // tslint:disable
   _analyzedModules: NgAnalyzedModules;
   _staticSymbolResolver: StaticSymbolResolver|undefined;
   _reflector: StaticReflector|undefined;
   _errors: {e: any, path?: string}[] = [];
   _resolver: CompileMetadataResolver|undefined;
   _refletor: StaticReflector;
+  // tslint:enable
 
   constructor(
       public service: ts.LanguageService, public program: ts.Program,
@@ -188,7 +191,7 @@ export class DiagnosticContext {
           analyzeHost);
 
       analyzedModules = this._analyzedModules =
-          analyzeNgModules(programSymbols, analyzeHost, this.resolver);
+          analyzeNgModules(programSymbols, analyzeHost, this.staticSymbolResolver, this.resolver);
     }
     return analyzedModules;
   }

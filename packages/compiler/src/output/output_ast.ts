@@ -228,7 +228,7 @@ export class ReadVarExpr extends Expression {
 
   set(value: Expression): WriteVarExpr {
     if (!this.name) {
-      throw new Error(`Built in variable ${this.builtin} can not be assigned to.`)
+      throw new Error(`Built in variable ${this.builtin} can not be assigned to.`);
     }
     return new WriteVarExpr(this.name, value, null, this.sourceSpan);
   }
@@ -353,7 +353,8 @@ export class ExternalExpr extends Expression {
 }
 
 export class ExternalReference {
-  constructor(public moduleName: string|null, public name: string|null, public runtime: any|null) {}
+  constructor(public moduleName: string|null, public name: string|null, public runtime?: any|null) {
+  }
 }
 
 export class ConditionalExpr extends Expression {
@@ -1140,8 +1141,8 @@ export function importType(
 }
 
 export function expressionType(
-    expr: Expression, typeModifiers: TypeModifier[] | null = null): ExpressionType|null {
-  return expr != null ? new ExpressionType(expr, typeModifiers) ! : null;
+    expr: Expression, typeModifiers: TypeModifier[] | null = null): ExpressionType {
+  return new ExpressionType(expr, typeModifiers);
 }
 
 export function literalArr(

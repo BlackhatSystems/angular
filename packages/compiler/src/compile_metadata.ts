@@ -6,12 +6,14 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {ChangeDetectionStrategy, ComponentFactory, RendererType2, SchemaMetadata, Type, ViewEncapsulation, ɵstringify as stringify} from '@angular/core';
-
 import {StaticSymbol} from './aot/static_symbol';
+import {ChangeDetectionStrategy, SchemaMetadata, Type, ViewEncapsulation} from './core';
 import {LifecycleHooks} from './lifecycle_reflector';
+import * as html from './ml_parser/ast';
+import {HtmlParser} from './ml_parser/html_parser';
+import {ParseTreeResult as HtmlParseTreeResult} from './ml_parser/parser';
 import {CssSelector} from './selector';
-import {splitAtColon} from './util';
+import {splitAtColon, stringify} from './util';
 
 
 
@@ -245,6 +247,7 @@ export class CompileTemplateMetadata {
   encapsulation: ViewEncapsulation|null;
   template: string|null;
   templateUrl: string|null;
+  htmlAst: HtmlParseTreeResult|null;
   isInline: boolean;
   styles: string[];
   styleUrls: string[];
@@ -252,22 +255,27 @@ export class CompileTemplateMetadata {
   animations: any[];
   ngContentSelectors: string[];
   interpolation: [string, string]|null;
-  constructor({encapsulation, template, templateUrl, styles, styleUrls, externalStylesheets,
-               animations, ngContentSelectors, interpolation, isInline}: {
+  preserveWhitespaces: boolean;
+  constructor({encapsulation, template, templateUrl, htmlAst, styles, styleUrls,
+               externalStylesheets, animations, ngContentSelectors, interpolation, isInline,
+               preserveWhitespaces}: {
     encapsulation: ViewEncapsulation | null,
     template: string|null,
     templateUrl: string|null,
+    htmlAst: HtmlParseTreeResult|null,
     styles: string[],
     styleUrls: string[],
     externalStylesheets: CompileStylesheetMetadata[],
     ngContentSelectors: string[],
     animations: any[],
     interpolation: [string, string]|null,
-    isInline: boolean
+    isInline: boolean,
+    preserveWhitespaces: boolean
   }) {
     this.encapsulation = encapsulation;
     this.template = template;
     this.templateUrl = templateUrl;
+    this.htmlAst = htmlAst;
     this.styles = _normalizeArray(styles);
     this.styleUrls = _normalizeArray(styleUrls);
     this.externalStylesheets = _normalizeArray(externalStylesheets);
@@ -278,6 +286,7 @@ export class CompileTemplateMetadata {
     }
     this.interpolation = interpolation;
     this.isInline = isInline;
+    this.preserveWhitespaces = preserveWhitespaces;
   }
 
   toSummary(): CompileTemplateSummary {
@@ -291,7 +300,7 @@ export class CompileTemplateMetadata {
 
 export interface CompileEntryComponentMetadata {
   componentType: any;
-  componentFactory: StaticSymbol|ComponentFactory<any>;
+  componentFactory: StaticSymbol|object;
 }
 
 // Note: This should only use interfaces as nested data types
@@ -314,8 +323,8 @@ export interface CompileDirectiveSummary extends CompileTypeSummary {
   changeDetection: ChangeDetectionStrategy|null;
   template: CompileTemplateSummary|null;
   componentViewType: StaticSymbol|ProxyClass|null;
-  rendererType: StaticSymbol|RendererType2|null;
-  componentFactory: StaticSymbol|ComponentFactory<any>|null;
+  rendererType: StaticSymbol|object|null;
+  componentFactory: StaticSymbol|object|null;
 }
 
 /**
@@ -341,8 +350,8 @@ export class CompileDirectiveMetadata {
     entryComponents: CompileEntryComponentMetadata[],
     template: CompileTemplateMetadata,
     componentViewType: StaticSymbol|ProxyClass|null,
-    rendererType: StaticSymbol|RendererType2|null,
-    componentFactory: StaticSymbol|ComponentFactory<any>|null,
+    rendererType: StaticSymbol|object|null,
+    componentFactory: StaticSymbol|object|null,
   }): CompileDirectiveMetadata {
     const hostListeners: {[key: string]: string} = {};
     const hostProperties: {[key: string]: string} = {};
@@ -419,8 +428,8 @@ export class CompileDirectiveMetadata {
   template: CompileTemplateMetadata|null;
 
   componentViewType: StaticSymbol|ProxyClass|null;
-  rendererType: StaticSymbol|RendererType2|null;
-  componentFactory: StaticSymbol|ComponentFactory<any>|null;
+  rendererType: StaticSymbol|object|null;
+  componentFactory: StaticSymbol|object|null;
 
   constructor({isHost,          type,      isComponent,       selector,      exportAs,
                changeDetection, inputs,    outputs,           hostListeners, hostProperties,
@@ -444,8 +453,8 @@ export class CompileDirectiveMetadata {
     entryComponents: CompileEntryComponentMetadata[],
     template: CompileTemplateMetadata|null,
     componentViewType: StaticSymbol|ProxyClass|null,
-    rendererType: StaticSymbol|RendererType2|null,
-    componentFactory: StaticSymbol|ComponentFactory<any>|null,
+    rendererType: StaticSymbol|object|null,
+    componentFactory: StaticSymbol|object|null,
   }) {
     this.isHost = !!isHost;
     this.type = type;
@@ -501,22 +510,26 @@ export class CompileDirectiveMetadata {
  */
 export function createHostComponentMeta(
     hostTypeReference: any, compMeta: CompileDirectiveMetadata,
-    hostViewType: StaticSymbol | ProxyClass): CompileDirectiveMetadata {
+    hostViewType: StaticSymbol | ProxyClass, htmlParser: HtmlParser): CompileDirectiveMetadata {
   const template = CssSelector.parse(compMeta.selector !)[0].getMatchingElementTemplate();
+  const templateUrl = '';
+  const htmlAst = htmlParser.parse(template, templateUrl);
   return CompileDirectiveMetadata.create({
     isHost: true,
     type: {reference: hostTypeReference, diDeps: [], lifecycleHooks: []},
     template: new CompileTemplateMetadata({
       encapsulation: ViewEncapsulation.None,
-      template: template,
-      templateUrl: '',
+      template,
+      templateUrl,
+      htmlAst,
       styles: [],
       styleUrls: [],
       ngContentSelectors: [],
       animations: [],
       isInline: true,
       externalStylesheets: [],
-      interpolation: null
+      interpolation: null,
+      preserveWhitespaces: false,
     }),
     exportAs: null,
     changeDetection: ChangeDetectionStrategy.Default,
@@ -530,7 +543,8 @@ export function createHostComponentMeta(
     queries: [],
     viewQueries: [],
     componentViewType: hostViewType,
-    rendererType: {id: '__Host__', encapsulation: ViewEncapsulation.None, styles: [], data: {}},
+    rendererType:
+        {id: '__Host__', encapsulation: ViewEncapsulation.None, styles: [], data: {}} as object,
     entryComponents: [],
     componentFactory: null
   });
@@ -716,7 +730,7 @@ function _normalizeArray(obj: any[] | undefined | null): any[] {
 
 export class ProviderMeta {
   token: any;
-  useClass: Type<any>|null;
+  useClass: Type|null;
   useValue: any;
   useExisting: any;
   useFactory: Function|null;
@@ -724,7 +738,7 @@ export class ProviderMeta {
   multi: boolean;
 
   constructor(token: any, {useClass, useValue, useExisting, useFactory, deps, multi}: {
-    useClass?: Type<any>,
+    useClass?: Type,
     useValue?: any,
     useExisting?: any,
     useFactory?: Function|null,

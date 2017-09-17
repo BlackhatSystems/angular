@@ -68,8 +68,11 @@ export class Deferred<R> {
 }
 
 export interface LazyModuleRef {
+  // Whether the AngularJS app has been bootstrapped outside the Angular zone
+  // (in which case calls to Angular APIs need to be brought back in).
+  needsNgZone: boolean;
   injector?: Injector;
-  promise: Promise<Injector>;
+  promise?: Promise<Injector>;
 }
 
 /**
@@ -90,6 +93,9 @@ export function hookupNgModel(ngModel: angular.INgModelController, component: an
   if (ngModel && supportsNgModel(component)) {
     ngModel.$render = () => { component.writeValue(ngModel.$viewValue); };
     component.registerOnChange(ngModel.$setViewValue.bind(ngModel));
+    if (typeof component.registerOnTouched === 'function') {
+      component.registerOnTouched(ngModel.$setTouched.bind(ngModel));
+    }
   }
 }
 

@@ -6,7 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {ChangeDetectorRef, ComponentFactory, ComponentRef, EventEmitter, Injector, OnChanges, ReflectiveInjector, SimpleChange, SimpleChanges, Type} from '@angular/core';
+import {ApplicationRef, ChangeDetectorRef, ComponentFactory, ComponentRef, EventEmitter, Injector, OnChanges, SimpleChange, SimpleChanges, Testability, TestabilityRegistry, Type} from '@angular/core';
 
 import * as angular from './angular1';
 import {PropertyBinding} from './component_info';
@@ -22,18 +22,20 @@ export class DowngradeComponentAdapter {
   private inputChangeCount: number = 0;
   private inputChanges: SimpleChanges = {};
   private componentScope: angular.IScope;
-  private componentRef: ComponentRef<any>|null = null;
-  private component: any = null;
-  private changeDetector: ChangeDetectorRef|null = null;
+  private componentRef: ComponentRef<any>;
+  private component: any;
+  private changeDetector: ChangeDetectorRef;
+  private appRef: ApplicationRef;
 
   constructor(
-      private id: string, private element: angular.IAugmentedJQuery,
-      private attrs: angular.IAttributes, private scope: angular.IScope,
-      private ngModel: angular.INgModelController, private parentInjector: Injector,
-      private $injector: angular.IInjectorService, private $compile: angular.ICompileService,
-      private $parse: angular.IParseService, private componentFactory: ComponentFactory<any>) {
-    (this.element[0] as any).id = id;
+      private element: angular.IAugmentedJQuery, private attrs: angular.IAttributes,
+      private scope: angular.IScope, private ngModel: angular.INgModelController,
+      private parentInjector: Injector, private $injector: angular.IInjectorService,
+      private $compile: angular.ICompileService, private $parse: angular.IParseService,
+      private componentFactory: ComponentFactory<any>,
+      private wrapCallback: <T>(cb: () => T) => () => T) {
     this.componentScope = scope.$new();
+    this.appRef = parentInjector.get(ApplicationRef);
   }
 
   compileContents(): Node[][] {
@@ -54,18 +56,28 @@ export class DowngradeComponentAdapter {
   }
 
   createComponent(projectableNodes: Node[][]) {
-    const childInjector = ReflectiveInjector.resolveAndCreate(
-        [{provide: $SCOPE, useValue: this.componentScope}], this.parentInjector);
+    const childInjector =
+        Injector.create([{provide: $SCOPE, useValue: this.componentScope}], this.parentInjector);
 
     this.componentRef =
         this.componentFactory.create(childInjector, projectableNodes, this.element[0]);
     this.changeDetector = this.componentRef.changeDetectorRef;
     this.component = this.componentRef.instance;
 
+    // testability hook is commonly added during component bootstrap in
+    // packages/core/src/application_ref.bootstrap()
+    // in downgraded application, component creation will take place here as well as adding the
+    // testability hook.
+    const testability = this.componentRef.injector.get(Testability, null);
+    if (testability) {
+      this.componentRef.injector.get(TestabilityRegistry)
+          .registerApplication(this.componentRef.location.nativeElement, testability);
+    }
+
     hookupNgModel(this.ngModel, this.component);
   }
 
-  setupInputs(propagateDigest = true): void {
+  setupInputs(needsNgZone: boolean, propagateDigest = true): void {
     const attrs = this.attrs;
     const inputs = this.componentFactory.inputs || [];
     for (let i = 0; i < inputs.length; i++) {
@@ -116,11 +128,11 @@ export class DowngradeComponentAdapter {
     }
 
     // Invoke `ngOnChanges()` and Change Detection (when necessary)
-    const detectChanges = () => this.changeDetector && this.changeDetector.detectChanges();
+    const detectChanges = () => this.changeDetector.detectChanges();
     const prototype = this.componentFactory.componentType.prototype;
     this.implementsOnChanges = !!(prototype && (<OnChanges>prototype).ngOnChanges);
 
-    this.componentScope.$watch(() => this.inputChangeCount, () => {
+    this.componentScope.$watch(() => this.inputChangeCount, this.wrapCallback(() => {
       // Invoke `ngOnChanges()`
       if (this.implementsOnChanges) {
         const inputChanges = this.inputChanges;
@@ -128,15 +140,21 @@ export class DowngradeComponentAdapter {
         (<OnChanges>this.component).ngOnChanges(inputChanges !);
       }
 
-      // If opted out of propagating digests, invoke change detection when inputs change
+      // If opted out of propagating digests, invoke change detection
+      // when inputs change
       if (!propagateDigest) {
         detectChanges();
       }
-    });
+    }));
 
     // If not opted out of propagating digests, invoke change detection on every digest
     if (propagateDigest) {
-      this.componentScope.$watch(detectChanges);
+      this.componentScope.$watch(this.wrapCallback(detectChanges));
+    }
+
+    // Attach the view so that it will be dirty-checked.
+    if (needsNgZone) {
+      this.appRef.attachView(this.componentRef.hostView);
     }
   }
 
@@ -184,14 +202,19 @@ export class DowngradeComponentAdapter {
     }
   }
 
-  registerCleanup() {
-    this.element.bind !('$destroy', () => {
+  registerCleanup(needsNgZone: boolean) {
+    this.element.on !('$destroy', () => {
       this.componentScope.$destroy();
-      this.componentRef !.destroy();
+      this.componentRef.injector.get(TestabilityRegistry)
+          .unregisterApplication(this.componentRef.location.nativeElement);
+      this.componentRef.destroy();
+      if (needsNgZone) {
+        this.appRef.detachView(this.componentRef.hostView);
+      }
     });
   }
 
-  getInjector(): Injector { return this.componentRef ! && this.componentRef !.injector; }
+  getInjector(): Injector { return this.componentRef.injector; }
 
   private updateInput(prop: string, prevValue: any, currValue: any) {
     if (this.implementsOnChanges) {

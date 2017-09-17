@@ -31,6 +31,8 @@ const resolvedPromise = Promise.resolve(null);
 function logOnError() {
   _zone.onError.subscribe({
     next: (error: any) => {
+      // Error handler should run outside of the Angular zone.
+      NgZone.assertNotInAngularZone();
       _errors.push(error);
       _traces.push(error.stack);
     }
@@ -214,6 +216,13 @@ function commonTests() {
     it('should return the body return value from run',
        inject([AsyncTestCompleter], (async: AsyncTestCompleter) => {
          macroTask(() => { expect(_zone.run(() => 6)).toEqual(6); });
+
+         macroTask(() => { async.done(); });
+       }), testTimeout);
+
+    it('should return the body return value from runTask',
+       inject([AsyncTestCompleter], (async: AsyncTestCompleter) => {
+         macroTask(() => { expect(_zone.runTask(() => 6)).toEqual(6); });
 
          macroTask(() => { async.done(); });
        }), testTimeout);
@@ -638,9 +647,9 @@ function commonTests() {
     it('should call onUnstable and onMicrotaskEmpty before and after each turn, respectively',
        inject([AsyncTestCompleter], (async: AsyncTestCompleter) => {
          let aResolve: (result: string | null) => void;
-         let aPromise: Promise<string>;
+         let aPromise: Promise<string|null>;
          let bResolve: (result: string | null) => void;
-         let bPromise: Promise<string>;
+         let bPromise: Promise<string|null>;
 
          runNgZoneNoLog(() => {
            macroTask(() => {

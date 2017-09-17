@@ -15,7 +15,7 @@ import {Observer} from 'rxjs/Observer';
  * This interface allows access to the underlying `HttpRequest`, and allows
  * responding with `HttpEvent`s or `HttpErrorResponse`s.
  *
- * @experimental
+ * @stable
  */
 export class TestRequest {
   /**
@@ -61,12 +61,11 @@ export class TestRequest {
     if (statusText === undefined) {
       throw new Error('statusText is required when setting a custom status.');
     }
-    const res = {body, headers, status, statusText, url};
     if (status >= 200 && status < 300) {
-      this.observer.next(new HttpResponse<any>(res));
+      this.observer.next(new HttpResponse<any>({body, headers, status, statusText, url}));
       this.observer.complete();
     } else {
-      this.observer.error(new HttpErrorResponse(res));
+      this.observer.error(new HttpErrorResponse({error: body, headers, status, statusText, url}));
     }
   }
 

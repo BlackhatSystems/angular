@@ -28,7 +28,6 @@ mkdir -p ${LOGS_DIR}
 # Install node
 #nvm install ${NODE_VERSION}
 
-
 # Install version of npm that we are locked against
 travisFoldStart "install-npm"
   npm install -g npm@${NPM_VERSION}
@@ -41,7 +40,21 @@ travisFoldStart "npm-install"
 travisFoldEnd "npm-install"
 
 
-if [[ ${TRAVIS} && (${CI_MODE} == "e2e" || ${CI_MODE} == "e2e_2" || ${CI_MODE} == "aio" || ${CI_MODE} == "aio_e2e" || ${CI_MODE} == "docs_test") ]]; then
+# Install Selenium WebDriver
+travisFoldStart "webdriver-manager-update"
+  # --gecko false prevents webdriver-manager to ping Github for updates
+  # which can hit the Github api limit.
+  $(npm bin)/webdriver-manager update --gecko false
+travisFoldEnd "webdriver-manager-update"
+
+
+# Install bower packages
+travisFoldStart "bower-install"
+  $(npm bin)/bower install
+travisFoldEnd "bower-install"
+
+
+if [[ ${TRAVIS} && (${CI_MODE} == "e2e" || ${CI_MODE} == "e2e_2" || ${CI_MODE} == "aio" || ${CI_MODE} == "aio_e2e" || ${CI_MODE} == "aio_tools_test") ]]; then
   # Install version of yarn that we are locked against
   travisFoldStart "install-yarn"
     curl -o- -L https://yarnpkg.com/install.sh | bash -s -- --version "${YARN_VERSION}"
@@ -49,7 +62,7 @@ if [[ ${TRAVIS} && (${CI_MODE} == "e2e" || ${CI_MODE} == "e2e_2" || ${CI_MODE} =
 fi
 
 
-if [[ ${TRAVIS} && (${CI_MODE} == "aio" || ${CI_MODE} == "aio_e2e" || ${CI_MODE} == "docs_test") ]]; then
+if [[ ${TRAVIS} && (${CI_MODE} == "aio" || ${CI_MODE} == "aio_e2e" || ${CI_MODE} == "aio_tools_test") ]]; then
   # angular.io: Install all yarn dependencies according to angular.io/yarn.lock
   travisFoldStart "yarn-install.aio"
     (
@@ -59,21 +72,26 @@ if [[ ${TRAVIS} && (${CI_MODE} == "aio" || ${CI_MODE} == "aio_e2e" || ${CI_MODE}
   travisFoldEnd "yarn-install.aio"
 fi
 
+# Install bazel
+if [[ ${TRAVIS} && (${CI_MODE} == "bazel" || ${CI_MODE} == "e2e_2") ]]; then
+  travisFoldStart "bazel-install"
+  (
+    mkdir tmp
+    cd tmp
+    curl --location --compressed https://github.com/bazelbuild/bazel/releases/download/0.5.2/bazel-0.5.2-installer-linux-x86_64.sh > bazel-0.5.2-installer-linux-x86_64.sh
+    chmod +x bazel-0.5.2-installer-linux-x86_64.sh
+    ./bazel-0.5.2-installer-linux-x86_64.sh --user
+    cd ..
+    rm -rf tmp
+  )
+  travisFoldEnd "bazel-install"
+fi
 
-# Install Chromium
-if [[ ${CI_MODE} == "js" || ${CI_MODE} == "e2e" || ${CI_MODE} == "e2e_2" || ${CI_MODE} == "aio" || ${CI_MODE} == "aio_e2e" ]]; then
-  travisFoldStart "install-chromium"
-    (
-      ${thisDir}/install-chromium.sh
-
-      # Start xvfb for local Chrome used for testing
-      if [[ ${TRAVIS} ]]; then
-        travisFoldStart "install-chromium.xvfb-start"
-          sh -e /etc/init.d/xvfb start
-        travisFoldEnd "install-chromium.xvfb-start"
-      fi
-    )
-  travisFoldEnd "install-chromium"
+# Start xvfb for local Chrome testing
+if [[ ${TRAVIS} && (${CI_MODE} == "js" || ${CI_MODE} == "e2e" || ${CI_MODE} == "e2e_2" || ${CI_MODE} == "aio" || ${CI_MODE} == "aio_e2e") ]]; then
+  travisFoldStart "xvfb-start"
+    sh -e /etc/init.d/xvfb start
+  travisFoldEnd "xvfb-start"
 fi
 
 
@@ -95,19 +113,6 @@ if [[ ${TRAVIS} && (${CI_MODE} == "browserstack_required" || ${CI_MODE} == "brow
     )
   travisFoldEnd "install-browserstack"
 fi
-
-
-# Install Selenium WebDriver
-travisFoldStart "webdriver-manager-update"
-  $(npm bin)/webdriver-manager update
-travisFoldEnd "webdriver-manager-update"
-
-
-# Install bower packages
-travisFoldStart "bower-install"
-  $(npm bin)/bower install
-travisFoldEnd "bower-install"
-
 
 # Print return arrows as a log separator
 travisFoldReturnArrows
